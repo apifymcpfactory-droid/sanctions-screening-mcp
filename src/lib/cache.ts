@@ -11,6 +11,7 @@
 
 import { SOURCES } from './sources/index.js';
 import type { ListName, ListStatusEntry, SanctionRecord } from '../types.js';
+import { logMem } from './memlog.js';
 
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
 const STALE_AFTER_MS = 26 * 60 * 60 * 1000; // small grace window past the daily cadence
@@ -22,11 +23,22 @@ interface CachedList {
 
 const cache = new Map<ListName, CachedList>();
 
+// Node only exposes global.gc() when started with --expose-gc (see Dockerfile's
+// NODE_OPTIONS). Forcing a collection between lists matters here specifically
+// because V8 is lazy about reclaiming garbage under memory pressure - without
+// this, the previous list's now-dead parse tree can still be sitting in heap
+// when the next list's allocations arrive, needlessly compounding peak usage
+// in a container with a fixed, fairly tight memory ceiling.
+declare const global: typeof globalThis & { gc?: () => void };
+
 async function refreshOne(source: (typeof SOURCES)[number]): Promise<void> {
     try {
+        logMem(`before ${source.list}`);
         const records = await source.fetch();
         cache.set(source.list, { records, fetchedAt: new Date().toISOString() });
         console.log(`[sanctions-screening] Refreshed ${source.list}: ${records.length} records`);
+        global.gc?.();
+        logMem(`after ${source.list} (post-gc)`);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[sanctions-screening] Failed to refresh ${source.list}: ${message}`);

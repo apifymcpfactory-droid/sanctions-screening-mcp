@@ -2,6 +2,11 @@
 // published as CSV. Each underlying person/entity appears as several rows
 // (one per name variation/AKA/FKA) sharing the same "Group ID" - we group
 // rows back into one record per Group ID before returning.
+//
+// Only ~11 of the source's 36 columns are ever used, so each row is reduced
+// to just those immediately after splitting rather than keeping the full
+// 36-field array around for all ~20,000 rows until grouping finishes - that
+// full-width retention was the single largest memory cost of the 5 lists.
 
 import type { RecordEntityType, SanctionRecord } from '../../types.js';
 import { parseCsvLine } from '../csv.js';
@@ -26,6 +31,36 @@ const COL = {
     groupId: 35,
 } as const;
 
+interface UkRow {
+    name1: string;
+    name2: string;
+    name3: string;
+    name4: string;
+    name5: string;
+    name6: string;
+    country: string;
+    otherInformation: string;
+    groupType: string;
+    aliasType: string;
+    regime: string;
+}
+
+function extractRow(fields: string[]): UkRow {
+    return {
+        name1: fields[COL.name1] ?? '',
+        name2: fields[COL.name2] ?? '',
+        name3: fields[COL.name3] ?? '',
+        name4: fields[COL.name4] ?? '',
+        name5: fields[COL.name5] ?? '',
+        name6: fields[COL.name6] ?? '',
+        country: fields[COL.country] ?? '',
+        otherInformation: fields[COL.otherInformation] ?? '',
+        groupType: fields[COL.groupType] ?? '',
+        aliasType: fields[COL.aliasType] ?? '',
+        regime: fields[COL.regime] ?? '',
+    };
+}
+
 function mapEntityType(groupType: string | undefined): RecordEntityType {
     if (groupType === 'Individual') return 'person';
     if (groupType === 'Entity') return 'org';
@@ -35,15 +70,8 @@ function mapEntityType(groupType: string | undefined): RecordEntityType {
 // UK OFSI orders given names 1-5 first with the surname (Name 6) last, e.g.
 // Name1="Mian" Name2="Abdul" Name6="HAQ" -> "Mian Abdul HAQ". Entities carry
 // their whole name in Name 6 alone, so the same join works for both.
-function buildName(fields: string[]): string {
-    return [
-        fields[COL.name1],
-        fields[COL.name2],
-        fields[COL.name3],
-        fields[COL.name4],
-        fields[COL.name5],
-        fields[COL.name6],
-    ]
+function buildName(row: UkRow): string {
+    return [row.name1, row.name2, row.name3, row.name4, row.name5, row.name6]
         .map((part) => part?.trim())
         .filter((part): part is string => Boolean(part))
         .join(' ');
@@ -56,31 +84,31 @@ export function parseUkCsv(csv: string): SanctionRecord[] {
         .slice(2)
         .filter((line) => line.trim().length > 0);
 
-    const groups = new Map<string, string[][]>();
+    const groups = new Map<string, UkRow[]>();
     for (const line of lines) {
         const fields = parseCsvLine(line);
         const groupId = fields[COL.groupId];
         if (!groupId) continue;
         const rows = groups.get(groupId) ?? [];
-        rows.push(fields);
+        rows.push(extractRow(fields));
         groups.set(groupId, rows);
     }
 
     const records: SanctionRecord[] = [];
     for (const [groupId, rows] of groups) {
-        const primaryRow = rows.find((row) => row[COL.aliasType] === 'Primary name') ?? rows[0];
+        const primaryRow = rows.find((row) => row.aliasType === 'Primary name') ?? rows[0];
         const primaryName = buildName(primaryRow) || 'Unknown';
         const aliases = [...new Set(rows.map(buildName).filter((name) => name.length > 0 && name !== primaryName))];
 
         records.push({
             entityId: `UK OFSI-${groupId}`,
             list: 'UK OFSI',
-            program: primaryRow[COL.regime] || 'Unspecified',
-            entityType: mapEntityType(primaryRow[COL.groupType]),
+            program: primaryRow.regime || 'Unspecified',
+            entityType: mapEntityType(primaryRow.groupType),
             primaryName,
             aliases,
-            country: primaryRow[COL.country] || undefined,
-            details: primaryRow[COL.otherInformation]?.slice(0, MAX_DETAILS_LENGTH),
+            country: primaryRow.country || undefined,
+            details: primaryRow.otherInformation?.slice(0, MAX_DETAILS_LENGTH),
         });
     }
     return records;
