@@ -1,36 +1,27 @@
-export type EntityTypeFilter = 'any' | 'person' | 'org';
+// MCP-specific option shapes. Everything reusable lives in src/core/types.ts.
 
-export type RecordEntityType = 'person' | 'org' | 'other';
+import type { SubjectRow } from './core/parseSubjects.js';
+import type { EntityTypeFilter, ExportFormat, ListName } from './core/types.js';
 
-export type ListName = 'OFAC SDN' | 'OFAC Consolidated' | 'EU Consolidated' | 'UK OFSI' | 'UN Consolidated';
-
-// One normalised entry from an official sanctions/watch list, regardless of
-// which source it came from - every parser in src/lib/sources produces this shape.
-export interface SanctionRecord {
-    entityId: string;
-    list: ListName;
-    program: string;
-    entityType: RecordEntityType;
-    primaryName: string;
-    aliases: string[];
-    country?: string;
-    details?: string;
+export interface ScreenToolOptions {
+    entityType?: EntityTypeFilter;
+    threshold?: number;
+    fuzzy?: boolean;
+    lists?: ListName[];
+    whitelist?: string[];
+    generateCertificate?: boolean;
 }
 
-export interface MatchDetail {
-    matchedName: string;
-    list: ListName;
-    program: string;
-    entityType: RecordEntityType;
-    score: number;
-    entityId: string;
-    details?: string;
+export interface ScreenToolInput extends ScreenToolOptions {
+    subjects: SubjectRow[];
 }
 
-export interface ListStatusEntry {
+export interface MonitorToolInput extends ScreenToolOptions {
+    subjects: SubjectRow[];
+    previousResults: unknown[]; // prior screen_entity/monitor_changes "results" array, passed back by the caller
+}
+
+export interface ExportToolInput {
     list: ListName;
-    recordCount: number;
-    lastRefreshedAt: string | null;
-    sourceUrl: string;
-    stale: boolean;
+    format?: ExportFormat;
 }

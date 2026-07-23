@@ -1,7 +1,7 @@
 {
   "name": "sanctions-screening",
   "version": "1.0.0",
-  "description": "Screen names and companies against the official OFAC, EU, UK and UN sanctions lists with deterministic fuzzy matching.",
+  "description": "Screen names, companies and crypto addresses against the official OFAC, EU, UK and UN sanctions lists with deterministic, transliteration-aware fuzzy matching, cross-list consolidation and false-positive analysis.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -14,8 +14,10 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.23.0",
     "chalk": "^5.4.1",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "fast-xml-parser": "^5.10.1",
+    "pdf-lib": "^1.17.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

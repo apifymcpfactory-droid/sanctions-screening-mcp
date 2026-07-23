@@ -21,8 +21,16 @@ pricing:
   tools:
     - name: "screen_entity"
       price: "0.02"
-      description: "Screen a name or company against official OFAC, EU, UK and UN
-        sanctions lists; returns matches with scores."
+      description: "Screen names, companies or crypto addresses against official
+        OFAC, EU, UK and UN sanctions lists; returns cross-list consolidated
+        matches with risk flags and false-positive analysis."
+    - name: "monitor_changes"
+      price: "0.02"
+      description: "Re-screen subjects against freshly-cached lists and report only
+        what changed since a prior result set you supply back."
+    - name: "export_list"
+      price: "0.05"
+      description: "Dump one official sanctions list as CSV, JSON or XLSX."
     - name: "list_status"
       price: "0.01"
       description: "Report which sanctions lists are loaded and when they were last

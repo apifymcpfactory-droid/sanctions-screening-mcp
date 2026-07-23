@@ -7,7 +7,8 @@
 // false-positive risk for a screening tool. No LLM, no external API - same
 // inputs always produce the same score.
 
-import { significantTokens } from './normalize.js';
+import { significantTokens, significantTokensTransliterated } from './normalize.js';
+import type { MatchType } from './types.js';
 
 // Standard Jaro similarity (0-1): matches are characters within a sliding
 // window of each other; transpositions are matched-but-out-of-order pairs.
@@ -77,12 +78,49 @@ function mongeElkan(from: string[], to: string[]): number {
     return total / from.length;
 }
 
-// Compares two raw names and returns an integer 0-100 similarity score,
-// insensitive to word order (token alignment, not string order).
-export function scoreNames(a: string, b: string): number {
-    const aTokens = significantTokens(a);
-    const bTokens = significantTokens(b);
+function scoreTokens(aTokens: string[], bTokens: string[]): number {
     if (aTokens.length === 0 || bTokens.length === 0) return 0;
     const similarity = (mongeElkan(aTokens, bTokens) + mongeElkan(bTokens, aTokens)) / 2;
     return Math.round(similarity * 100);
+}
+
+// Compares two raw names and returns an integer 0-100 similarity score,
+// insensitive to word order (token alignment, not string order).
+export function scoreNames(a: string, b: string): number {
+    return scoreTokens(significantTokens(a), significantTokens(b));
+}
+
+export interface NameMatchOutcome {
+    score: number;
+    matchType: MatchType;
+}
+
+// Scores a query against one candidate name, trying an exact normalised
+// match first, then direct fuzzy, then a transliterated pass (Cyrillic/Greek
+// -> Latin on both sides) so a romanised query can still hit a
+// native-script list entry. When `fuzzy` is false, only the exact and
+// transliteration-exact checks run - useful for a strict "no fuzz" mode.
+export function matchAgainstName(query: string, candidate: string, fuzzy: boolean): NameMatchOutcome {
+    const queryTokens = significantTokens(query);
+    const candidateTokens = significantTokens(candidate);
+    const exactScore = scoreTokens(queryTokens, candidateTokens);
+    if (exactScore === 100) return { score: 100, matchType: 'exact' };
+
+    const translitQueryTokens = significantTokensTransliterated(query);
+    const translitCandidateTokens = significantTokensTransliterated(candidate);
+    const translitScore = scoreTokens(translitQueryTokens, translitCandidateTokens);
+    if (translitScore === 100) return { score: 100, matchType: 'transliteration' };
+
+    if (!fuzzy) {
+        // Non-fuzzy mode still allows a near-exact (>=98) hit through, since
+        // that band is almost always a punctuation/whitespace difference
+        // rather than a genuinely distinct name.
+        const best = Math.max(exactScore, translitScore);
+        return best >= 98 ? { score: best, matchType: best === exactScore ? 'exact' : 'transliteration' } : { score: 0, matchType: 'fuzzy' };
+    }
+
+    if (translitScore > exactScore) {
+        return { score: translitScore, matchType: translitScore >= 92 ? 'strong-fuzzy' : 'transliteration' };
+    }
+    return { score: exactScore, matchType: exactScore >= 92 ? 'strong-fuzzy' : 'fuzzy' };
 }

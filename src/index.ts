@@ -3,8 +3,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import chalk from "chalk";
-import { screenEntity, listStatus } from "./tools.js";
-import { initialLoad, startBackgroundRefresh } from "./lib/cache.js";
+import { screenEntity, monitorChanges, exportList, listStatus } from "./tools.js";
+import { initialLoad, startBackgroundRefresh } from "./cache.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -80,20 +80,79 @@ function logError(method: string, error: unknown, latencyMs: number): void {
 // "Already connected to a transport" on the second connection — and Cloud Run
 // opens several (startup probe + real requests). So always create a new server
 // (and a new transport) inside the request handler below.
+const LIST_NAMES = ["OFAC SDN", "OFAC Consolidated", "EU Consolidated", "UK OFSI", "UN Consolidated"] as const;
+
+const subjectSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    entityType: z.enum(["any", "person", "org"]).optional(),
+    yearOfBirth: z.number().int().optional(),
+    dob: z.string().optional().describe("ISO date YYYY-MM-DD, if known."),
+    country: z.string().optional(),
+    nationality: z.string().optional(),
+    idNumber: z.string().optional(),
+    passport: z.string().optional(),
+    regNumber: z.string().optional(),
+    lei: z.string().optional(),
+    program: z.string().optional().describe("Restrict this subject's matches to a programme, e.g. \"IRAN\"."),
+  }),
+]);
+
+const screenOptionsSchema = {
+  entityType: z.enum(["any", "person", "org"]).optional().describe('Narrow matching to persons or organizations only. Defaults to "any".'),
+  threshold: z.number().int().min(0).max(100).optional().describe("Minimum fuzzy-match score (0-100) for a list entry to be returned as a match. Defaults to 85."),
+  fuzzy: z.boolean().optional().describe("Typo/word-order/transliteration-tolerant matching. Defaults to true; false requires an exact (or punctuation-only-different) match."),
+  lists: z.array(z.enum(LIST_NAMES)).optional().describe("Restrict screening to specific lists. Omit to screen all 5."),
+  whitelist: z.array(z.string()).optional().describe('Names or list entityIds (e.g. "OFAC SDN-36") from prior decisions to suppress.'),
+};
+
+const riskIndicatorSchema = z.object({ code: z.string(), label: z.string() });
+
 const matchSchema = z.object({
-  matchedName: z.string().describe("The primary name or alias on the list that scored highest against the query."),
-  list: z.string().describe("Which official list the match came from, e.g. \"OFAC SDN\"."),
-  program: z.string().describe("The sanctions programme/regime this listing falls under."),
-  entityType: z.enum(["person", "org", "other"]),
-  score: z.number().int().min(0).max(100).describe("Deterministic fuzzy-match score, 0-100."),
-  entityId: z.string().describe("Stable identifier for this list entry, e.g. \"OFAC SDN-36\"."),
-  details: z.string().optional().describe("Short free-text context from the source list (title, remarks), if any."),
+  matchedName: z.string(),
+  aliasHit: z.string().optional().describe("The specific alias that scored highest, if different from matchedName."),
+  confidence: z.number().int().min(0).max(100),
+  matchType: z.enum(["exact", "strong-fuzzy", "fuzzy", "alias", "transliteration", "crypto-address"]),
+  sources: z.array(
+    z.object({
+      list: z.string(),
+      entityId: z.string(),
+      program: z.string(),
+      listVersion: z.string(),
+      sourceUrl: z.string(),
+    }),
+  ).describe("Every list this same entity appears on, consolidated - not one row per list."),
+  riskIndicators: z.array(riskIndicatorSchema),
+  falsePositiveAnalysis: z.object({
+    mismatchSignals: z.array(z.string()),
+    likelyFalsePositive: z.boolean(),
+    reason: z.string(),
+  }),
+  autoCleared: z.boolean(),
+  ownershipRisk: z.object({
+    flagged: z.boolean(),
+    linkedEntities: z.array(z.string()),
+    note: z.string(),
+  }),
+});
+
+const screeningSummarySchema = z.object({
+  subject: z.string(),
+  verdict: z.enum(["CLEAR", "REVIEW", "ESCALATE"]),
+  recommendedAction: z.string(),
+  priorityScore: z.number().int().min(0).max(100),
+  matchCount: z.number().int(),
+  highestConfidence: z.number().int().min(0).max(100),
+  narrative: z.string(),
+  matches: z.array(matchSchema),
+  whitelisted: z.boolean(),
 });
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "sanctions-screening",
-    version: "1.0.0",
+    version: "2.0.0",
   });
 
   server.registerTool(
@@ -101,44 +160,84 @@ function createMcpServer(): McpServer {
     {
       title: "Screen Entity",
       description:
-        "Screen one or more names or companies against the official OFAC SDN, OFAC Consolidated, EU, UK OFSI and UN sanctions lists; returns deterministic scored matches. Primary government sources only - never OpenSanctions or other aggregated data. Example: { \"names\": [\"AeroCaribbean Airlines\"], \"threshold\": 85 }.",
+        "Screen one or more names, companies or crypto addresses (AML/KYC/PEP watchlist check) against the official OFAC SDN, OFAC Consolidated, EU, UK OFSI and UN sanctions lists. Cross-list matches are consolidated into one result per identity, with risk-programme flags, false-positive analysis and an OFAC 50%-rule ownership signal. Example: { \"subjects\": [\"AeroCaribbean Airlines\"], \"threshold\": 85 }.",
       inputSchema: {
-        names: z
-          .array(z.string())
-          .min(1)
-          .describe('One or more person or company names to screen, e.g. ["AeroCaribbean Airlines"].'),
-        entityType: z
-          .enum(["any", "person", "org"])
-          .optional()
-          .describe('Narrow matching to persons or organizations only. Defaults to "any".'),
-        country: z
-          .string()
-          .optional()
-          .describe('Narrow matching to list entries tagged with this country, e.g. "Cuba". Omit to match any country.'),
-        threshold: z
-          .number()
-          .int()
-          .min(0)
-          .max(100)
-          .optional()
-          .describe("Minimum fuzzy-match score (0-100) for a list entry to be returned as a match. Defaults to 85."),
+        subjects: z.array(subjectSchema).min(1).describe('Plain names, or objects for richer matching, e.g. ["AeroCaribbean Airlines"] or [{"name": "...", "country": "Cuba"}].'),
+        ...screenOptionsSchema,
+        generateCertificate: z.boolean().optional().describe("Render a PDF Sanctions Screening Certificate (base64) covering every subject in this call."),
       },
       outputSchema: {
-        results: z
-          .array(
-            z.object({
-              query: z.string(),
-              isMatch: z.boolean(),
-              topScore: z.number().int().min(0).max(100).describe("Highest score found, even if below the threshold."),
-              matches: z.array(matchSchema),
-            }),
-          )
-          .describe("One entry per requested name, in the same order."),
+        results: z.array(screeningSummarySchema).describe("One entry per requested subject, in the same order."),
+        certificatePdfBase64: z.string().optional(),
       },
     },
-    async ({ names, entityType, country, threshold }) => {
+    async (input) => {
       await initialLoad;
-      const output = screenEntity(names, { entityType, country, threshold });
+      const output = await screenEntity(input);
+      return {
+        content: [{ type: "text", text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    }
+  );
+
+  server.registerTool(
+    "monitor_changes",
+    {
+      title: "Monitor Changes",
+      description:
+        "Re-screens subjects against the freshly-cached lists and reports only what changed versus a prior result set you supply back (previousResults - your own copy of an earlier screen_entity/monitor_changes \"results\" array). Use this to detect new hits, newly-cleared subjects, or list updates without re-reading every unchanged subject.",
+      inputSchema: {
+        subjects: z.array(subjectSchema).min(1),
+        previousResults: z.array(z.unknown()).describe("The \"results\" array from a prior screen_entity or monitor_changes call, for the same subjects."),
+        ...screenOptionsSchema,
+      },
+      outputSchema: {
+        changedCount: z.number().int(),
+        unchangedCount: z.number().int(),
+        changes: z.array(
+          z.object({
+            subject: z.string(),
+            changeType: z.enum(["new-hit", "newly-cleared", "list-version-changed", "score-changed"]),
+            detail: z.string(),
+            current: screeningSummarySchema,
+            previous: screeningSummarySchema.optional(),
+          }),
+        ),
+        checkedAt: z.string(),
+      },
+    },
+    async (input) => {
+      await initialLoad;
+      const output = await monitorChanges(input);
+      return {
+        content: [{ type: "text", text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    }
+  );
+
+  server.registerTool(
+    "export_list",
+    {
+      title: "Export List",
+      description: "Dump one official sanctions list as clean structured data (CSV, JSON, or base64 XLSX) - commodity mode, no screening.",
+      inputSchema: {
+        list: z.enum(LIST_NAMES),
+        format: z.enum(["csv", "json", "xlsx"]).optional().describe("Defaults to csv."),
+      },
+      outputSchema: {
+        list: z.string(),
+        format: z.enum(["csv", "json", "xlsx"]),
+        recordCount: z.number().int(),
+        csv: z.string().optional(),
+        json: z.array(z.unknown()).optional(),
+        xlsxBase64: z.string().optional(),
+      },
+    },
+    async (input) => {
+      await initialLoad;
+      const output = await exportList(input);
       return {
         content: [{ type: "text", text: JSON.stringify(output) }],
         structuredContent: output,
