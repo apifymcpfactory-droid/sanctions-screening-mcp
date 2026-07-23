@@ -33,28 +33,37 @@ export interface ScreenEntityResult {
     [key: string]: unknown;
     results: ScreeningSummaryRecord[];
     certificatePdfBase64?: string;
+    certificateError?: string;
 }
 
 // Screens every subject against the in-memory 5-list cache (see
 // core/sources/index.ts for why OpenSanctions is Apify-only). Blank names
 // are returned with no lookup performed, not silently dropped.
+//
+// Certificate generation is wrapped in try/catch and can never take down
+// `results` with it - a name in a script the bundled font can't render
+// (see certificate.ts) must not cost the caller their screening results,
+// the same incident and fix as the sibling Apify actor.
 export async function screenEntity(input: ScreenToolInput): Promise<ScreenEntityResult> {
     const subjects = await parseSubjectsInput({ subjects: input.subjects });
     const options = resolveScreenOptions(input);
     const results = screenSubjects(subjects, getPool(), options);
 
-    let certificatePdfBase64: string | undefined;
-    if (input.generateCertificate) {
+    if (!input.generateCertificate) return { results };
+
+    try {
         const pdf = await buildCertificatePdf(results, {
             lists: getAuditLists(),
             threshold: options.threshold,
             fuzzy: options.fuzzy,
             matchMethod: MATCH_METHOD_DESCRIPTION,
         });
-        certificatePdfBase64 = Buffer.from(pdf).toString('base64');
+        return { results, certificatePdfBase64: Buffer.from(pdf).toString('base64') };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[sanctions-screening] Certificate generation failed - returning results without it: ${message}`);
+        return { results, certificateError: message };
     }
-
-    return { results, ...(certificatePdfBase64 ? { certificatePdfBase64 } : {}) };
 }
 
 export interface MonitorChangesResult {

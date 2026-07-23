@@ -169,6 +169,7 @@ function createMcpServer(): McpServer {
       outputSchema: {
         results: z.array(screeningSummarySchema).describe("One entry per requested subject, in the same order."),
         certificatePdfBase64: z.string().optional(),
+        certificateError: z.string().optional().describe("Present only if generateCertificate was true and certificate rendering failed - results above are unaffected either way."),
       },
     },
     async (input) => {

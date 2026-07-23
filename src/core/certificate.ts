@@ -1,10 +1,24 @@
 // Renders a plain-text "Sanctions Screening Certificate" PDF: one page per
-// subject, text-only (no images/fonts beyond the built-in Helvetica), so a
-// batch of hundreds of subjects still stays a few MB at most - nowhere near
-// the memory profile of the list downloads this tool has to be careful
-// about elsewhere.
+// subject, text-only, so a batch of hundreds of subjects still stays a few
+// MB at most - nowhere near the memory profile of the list downloads this
+// tool has to be careful about elsewhere.
+//
+// Uses a bundled Noto Sans (regular + bold) TTF via @pdf-lib/fontkit for
+// EVERY piece of text on the certificate, not pdf-lib's built-in
+// StandardFonts. StandardFonts.Helvetica can only encode WinAnsi (Latin-1)
+// and throws "WinAnsi cannot encode ..." the moment a subject or matched
+// name contains a Cyrillic, Greek, or other non-Latin-1 character - a real
+// and common case for sanctioned entities. Noto Sans covers Latin
+// (including extended), Cyrillic and Greek; it does not cover Arabic, CJK
+// or other complex scripts, so a name in one of those scripts can still fail
+// to render here - that's why certificate generation itself must never be
+// allowed to fail the whole run (see modes/screen.ts and main.ts).
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
+import { PDFDocument, rgb, type PDFFont } from 'pdf-lib';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { AuditListEntry, ScreeningSummaryRecord } from './types.js';
 
@@ -12,6 +26,12 @@ const MAX_MATCHES_SHOWN = 8;
 const PAGE_WIDTH = 612; // US Letter
 const PAGE_HEIGHT = 792;
 const MARGIN = 54;
+
+// assets/ sits at the repo root, one level above both src/core/ (test/dev
+// run) and dist/core/ (built run) - same relative depth in either case.
+const ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
+const REGULAR_FONT_PATH = join(ASSETS_DIR, 'NotoSans-Regular.ttf');
+const BOLD_FONT_PATH = join(ASSETS_DIR, 'NotoSans-Bold.ttf');
 
 export interface CertificateContext {
     lists: AuditListEntry[];
@@ -39,8 +59,9 @@ function wrapText(text: string, maxCharsPerLine: number): string[] {
 
 export async function buildCertificatePdf(records: ScreeningSummaryRecord[], ctx: CertificateContext): Promise<Uint8Array> {
     const doc = await PDFDocument.create();
-    const font = await doc.embedFont(StandardFonts.Helvetica);
-    const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+    doc.registerFontkit(fontkit);
+    const font: PDFFont = await doc.embedFont(readFileSync(REGULAR_FONT_PATH), { subset: true });
+    const bold: PDFFont = await doc.embedFont(readFileSync(BOLD_FONT_PATH), { subset: true });
     const screenedOn = new Date().toISOString();
 
     for (const record of records) {

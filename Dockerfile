@@ -23,6 +23,10 @@ WORKDIR /app
 # Copy built files and dependencies
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
+# assets/ (bundled Unicode fonts for certificate.ts, plus the server logo)
+# is read at runtime via fs.readFileSync, not bundled by tsc - it must be
+# copied into the production image explicitly, same as dist/.
+COPY --from=builder /app/assets ./assets
 
 # Install only production dependencies
 RUN npm ci --omit=dev --ignore-scripts
