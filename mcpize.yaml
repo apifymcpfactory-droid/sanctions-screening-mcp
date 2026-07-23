@@ -12,3 +12,18 @@ startCommand:
 
 configSchema:
   source: code
+
+pricing:
+  protocol: "x402"
+  network: "base"
+  recipient: "0x8AE422532dB78d6A5592244EA1DdF7B4a72E7824"
+  asset: "usdc"
+  tools:
+    - name: "screen_entity"
+      price: "0.02"
+      description: "Screen a name or company against official OFAC, EU, UK and UN
+        sanctions lists; returns matches with scores."
+    - name: "list_status"
+      price: "0.01"
+      description: "Report which sanctions lists are loaded and when they were last
+        updated."
