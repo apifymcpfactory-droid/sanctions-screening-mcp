@@ -11,6 +11,7 @@
 // transient DOM-parsing memory spike in an already memory-constrained
 // container (see Dockerfile).
 
+import { pushAll } from './core/arrayUtils.js';
 import { buildEntityPool, type EntityPool } from './core/screening.js';
 import { SOURCES } from './core/sources/index.js';
 import type { AuditListEntry, ListName, ListStatusEntry, NormalizedEntity } from './core/types.js';
@@ -54,7 +55,7 @@ async function refreshOne(source: (typeof SOURCES)[number]): Promise<void> {
 
 function rebuildPool(): void {
     const all: NormalizedEntity[] = [];
-    for (const cached of cache.values()) all.push(...cached.records);
+    for (const cached of cache.values()) pushAll(all, cached.records);
     pool = buildEntityPool(all);
     logMem('after pool rebuild');
 }

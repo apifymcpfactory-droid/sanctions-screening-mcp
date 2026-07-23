@@ -5,6 +5,7 @@
 
 import ExcelJS from 'exceljs';
 
+import { pushAll } from './arrayUtils.js';
 import { parseCsvLine } from './csv.js';
 import { USER_AGENT } from './http.js';
 import type { EntityTypeFilter, Subject } from './types.js';
@@ -103,21 +104,21 @@ export async function parseSubjectsInput(input: SubjectsInput): Promise<Subject[
     const collected: Subject[] = [];
 
     if (input.subjects?.length) {
-        collected.push(...input.subjects.map(subjectRowToSubject).filter((s) => s.name?.trim().length > 0));
+        pushAll(collected, input.subjects.map(subjectRowToSubject).filter((s) => s.name?.trim().length > 0));
     }
 
     if (input.subjectsText?.trim()) {
-        collected.push(...parseCsvText(input.subjectsText));
+        pushAll(collected, parseCsvText(input.subjectsText));
     }
 
     if (input.subjectsFileUrl) {
         const isXlsx = /\.xlsx($|\?)/i.test(input.subjectsFileUrl);
         if (isXlsx) {
             const bytes = await fetchBytes(input.subjectsFileUrl);
-            collected.push(...(await parseXlsxBuffer(bytes)));
+            pushAll(collected, await parseXlsxBuffer(bytes));
         } else {
             const bytes = await fetchBytes(input.subjectsFileUrl);
-            collected.push(...parseCsvText(new TextDecoder('utf-8').decode(bytes)));
+            pushAll(collected, parseCsvText(new TextDecoder('utf-8').decode(bytes)));
         }
     }
 

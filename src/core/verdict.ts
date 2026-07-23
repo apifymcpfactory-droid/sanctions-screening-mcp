@@ -3,6 +3,7 @@
 // rationale - written for CLEAR results too, so a negative screening result
 // is documented evidence rather than a silent absence of output.
 
+import { maxOf } from './arrayUtils.js';
 import type { ConsolidatedMatch, ScreeningSummaryRecord, Subject, Verdict } from './types.js';
 
 const ESCALATE_CONFIDENCE = 95;
@@ -26,7 +27,7 @@ function recommendedActionFor(verdict: Verdict): string {
 
 function priorityScoreFor(matches: ConsolidatedMatch[]): number {
     if (matches.length === 0) return 0;
-    const highestConfidence = Math.max(...matches.map((m) => m.confidence));
+    const highestConfidence = maxOf(matches.map((m) => m.confidence));
     const ownershipBoost = matches.some((m) => m.ownershipRisk.flagged) ? 10 : 0;
     const riskBoost = matches.some((m) => m.riskIndicators.some((r) => HIGH_RISK_CODES.has(r.code))) ? 10 : 0;
     const allAutoCleared = matches.every((m) => m.autoCleared);
@@ -85,7 +86,7 @@ export function buildScreeningSummary(
     if (activeMatches.some(isEscalationWorthy)) verdict = 'ESCALATE';
     else if (activeMatches.length > 0) verdict = 'REVIEW';
 
-    const highestConfidence = allMatches.length > 0 ? Math.max(...allMatches.map((m) => m.confidence)) : 0;
+    const highestConfidence = allMatches.length > 0 ? maxOf(allMatches.map((m) => m.confidence)) : 0;
 
     return {
         subject: subject.name,
