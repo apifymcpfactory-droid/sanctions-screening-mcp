@@ -1,90 +1,276 @@
 # Sanctions Screening: Check Names Against OFAC, EU, UK & UN
 
-Sanctions Screening checks names, companies and crypto addresses against official OFAC, EU, UK and UN sanctions lists in one call: cross-list identity consolidation, risk flags, false-positive analysis, and a plain-English verdict, not just a pile of scored rows. For AML, KYC and denied-party screening. Nothing stored.
+Sanctions Screening checks names, companies and crypto addresses against official OFAC, EU, UK and UN sanctions data in one call, and returns a plain-English decision your team can act on instead of a pile of raw rows to interpret yourselves.
 
-An MCP server hosted on [MCPize](https://mcpize.com). Shares its screening core with the [Sanctions Screening Apify Actor](https://apify.com/apifmcpfactory/sanctions-screening), which additionally screens OpenSanctions' PEP and aggregated-watchlist data under a larger memory allocation than this server's container allows.
+## 1. Why use Sanctions Screening
 
-## What it does
+AML and KYC teams doing this by hand open the OFAC SDN list, the EU Consolidated list, the UK OFSI list and the UN Consolidated list separately, download different file formats, and manually cross-check every name against each one. Versus the OFAC website by hand, that is minutes per name that should take seconds.
 
-Doing this by hand means checking several separate government sources and manually working out whether three "hits" are actually the same sanctioned person listed three times. This server does that consolidation for you: the same identity across OFAC, the EU, the UK and the UN comes back as one match with every source listed, tagged with risk-programme flags (IRAN, RUSSIA-EO14024, DPRK, CYBER, TERRORISM and more), a false-positive check against any date of birth, country, nationality or identifier you provide, and an OFAC 50%-Rule ownership-linkage signal where the source list data itself names one.
+Enterprise AML/KYC screening platforms solve the coverage problem, but typically cost $5,000 to $100,000+ a year in licensing before you screen a single name. Most low-cost screening tools sit in between: they fetch one or two lists and hand you a flat list of fuzzy-match rows, leaving you to work out whether three "matches" are actually the same sanctioned person listed three times.
 
-**Who it's for:** compliance and onboarding teams running AML/KYC and denied-party checks, payments and marketplace platforms screening counterparties or payout wallets, and AI agents that need a screening step inside a larger workflow.
+Sanctions Screening is built to close that gap: official government sources, cross-list identity consolidation, a documented CLEAR/REVIEW/ESCALATE decision instead of a bare score, and change monitoring, callable directly by an AI agent or from any MCP client.
 
-## Why it's built this way
+## 2. Key features
 
-- **Official sources only.** OFAC SDN, OFAC Consolidated, EU Consolidated, UK OFSI and UN Consolidated. No commercially-licensed feeds.
-- **A decision, not just a score.** Every subject gets a verdict (CLEAR, REVIEW or ESCALATE), a recommended action, and a plain-English narrative, including for clean results, so a negative screening outcome is documented, not silent.
-- **Consolidated, not duplicated.** The same identity across multiple lists is one match with a `sources` array, not one row per list.
-- **Honest about false positives.** A low-confidence match contradicted by the subject's own stated attributes is flagged `autoCleared` so it does not eat analyst time.
-- **Deterministic and transliteration-aware.** Token-aligned Jaro-Winkler fuzzy matching, plus Cyrillic and Greek to Latin transliteration. No LLM, no black box, the same input always scores the same.
-- **Fast repeat checks.** The 5 lists are cached in memory and refreshed on a daily schedule, so a screening call never pays the cost of re-downloading the underlying government data.
+- **OFAC SDN screening**: the US Treasury's Specially Designated Nationals list, matched with typo and word-order tolerance.
+- **OFAC Consolidated screening**: the US Treasury's non-SDN consolidated list, covering additional sanctions programmes.
+- **EU Consolidated Financial Sanctions**: the European Commission's official financial sanctions database.
+- **UK OFSI Consolidated List**: the UK Office of Financial Sanctions Implementation's targets list.
+- **UN Security Council Consolidated List**: the UN's official sanctions list.
+- **AML/KYC risk-programme flags**: matches tagged IRAN, RUSSIA-EO14024, DPRK, CYBER, TERRORISM, PROLIFERATION, GLOBAL-MAGNITSKY and more.
+- **Cross-list identity consolidation**: the same person listed by OFAC, the EU, the UK and the UN comes back as one match, not four rows to reconcile by hand.
+- **False-positive analysis**: date of birth, country, nationality or identifier mismatches are surfaced explicitly against every match.
+- **Denied party crypto address screening**: BTC, ETH and similar wallet addresses checked against OFAC's published digital currency address list.
+- **Whitelist memory**: names or list IDs already cleared are suppressed with a documented reason instead of re-flagging every call.
+- **Change monitoring**: re-screen the same subjects and get back only what changed since your last check.
+- **PDF audit certificates**: an optional screening certificate documenting subject, lists, versions, method, threshold and verdict.
 
-## Tools
+## 3. Built for AI agents, callable by humans too
+
+This is an MCP server: an AI agent (Claude, Cursor, or any MCP-compatible client) can call its tools directly as one step inside a larger workflow, such as KYC intake, vendor onboarding, or payment release, without a human copying names between systems. A person can call the same tools through any MCP client, or directly over HTTP JSON-RPC for testing.
+
+One example agent call:
+
+```
+Tool: screen_entity
+
+Input:
+{
+    "subjects": [{ "name": "Jane Doe", "country": "Cuba" }],
+    "threshold": 85
+}
+
+Result (one item in "results"):
+{
+    "subject": "Jane Doe",
+    "verdict": "REVIEW",
+    "recommendedAction": "Route to a compliance analyst for manual review before proceeding.",
+    "matchCount": 1,
+    "highestConfidence": 91
+}
+```
+
+## 4. How to use Sanctions Screening
+
+**From an AI agent**: connect any MCP-compatible client to this server's endpoint and call `screen_entity`, `monitor_changes`, `export_list` or `list_status` directly.
+
+**Python** (direct HTTP call to the MCP endpoint):
+
+```python
+import requests
+
+response = requests.post("https://your-deployment-url/mcp", json={
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+        "name": "screen_entity",
+        "arguments": {"subjects": ["AeroCaribbean Airlines", {"name": "Jane Doe", "country": "Cuba"}], "threshold": 85},
+    },
+})
+print(response.json())
+```
+
+**JavaScript**:
+
+```javascript
+const response = await fetch('https://your-deployment-url/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'screen_entity', arguments: { subjects: ['AeroCaribbean Airlines', { name: 'Jane Doe', country: 'Cuba' }], threshold: 85 } },
+    }),
+});
+console.log(await response.json());
+```
+
+**cURL**:
+
+```bash
+curl -X POST "https://your-deployment-url/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"screen_entity","arguments":{"subjects":["AeroCaribbean Airlines","Acme Test Company"],"threshold":85}}}'
+```
+
+## 5. Input parameters
 
 ### `screen_entity`
 
-Screen names, companies or crypto addresses against official OFAC/EU/UK/UN sanctions lists; returns consolidated matches with risk flags and false-positive analysis.
-
-| Input | Type | Description |
-| --- | --- | --- |
-| `subjects` | array (required) | Plain names, or objects: `{name, entityType, yearOfBirth, dob, country, nationality, idNumber, passport, regNumber, lei, program}`. |
-| `entityType` | `"any" \| "person" \| "org"` | Narrow to persons or organizations. Defaults to `any`. |
-| `threshold` | `integer 0-100` | Minimum fuzzy-match score to return. Defaults to `85`. |
-| `fuzzy` | `boolean` | Typo/word-order/transliteration-tolerant matching. Defaults to `true`. |
-| `lists` | array | Restrict to specific lists. Defaults to all 5. |
+| Field | Type | Description |
+|---|---|---|
+| `subjects` | array (required) | Names as plain strings, or objects: `{name, entityType, yearOfBirth, dob, country, nationality, idNumber, passport, regNumber, lei, program}`. |
+| `entityType` | string | `any` (default), `person`, or `org`. A per-subject `entityType` overrides this. |
+| `threshold` | integer | Minimum fuzzy-match score, 0 to 100. Default 85. |
+| `fuzzy` | boolean | Typo/word-order/transliteration-tolerant matching. Default true. |
+| `lists` | array | Restrict screening to specific lists. Default: all five (OFAC SDN, OFAC Consolidated, EU Consolidated, UK OFSI, UN Consolidated). |
 | `whitelist` | array | Names or list entityIds from prior decisions to suppress. |
-| `generateCertificate` | `boolean` | Return a base64 PDF audit certificate alongside the results. |
-
-Example call:
-
-```json
-{ "subjects": ["AeroCaribbean Airlines", { "name": "Jane Doe", "country": "Cuba" }], "threshold": 85 }
-```
+| `generateCertificate` | boolean | Return a base64 PDF audit certificate alongside the results. Default false. |
 
 ### `monitor_changes`
 
-Re-screens subjects against the freshly-cached lists and reports only what changed against a prior result set you supply back.
-
-| Input | Type | Description |
-| --- | --- | --- |
+| Field | Type | Description |
+|---|---|---|
 | `subjects` | array (required) | Same shape as `screen_entity`. |
 | `previousResults` | array (required) | The `results` array from a prior `screen_entity` or `monitor_changes` call, for the same subjects. |
-| (all `screen_entity` options) | | Same defaults apply. |
-
-Example call:
-
-```json
-{ "subjects": ["Jane Doe"], "previousResults": [ /* prior screen_entity results */ ] }
-```
+| (all `screen_entity` options except `generateCertificate`) | | Same defaults apply. |
 
 ### `export_list`
 
-Dumps one official sanctions list as clean structured data. Commodity mode, no screening.
-
-| Input | Type | Description |
-| --- | --- | --- |
+| Field | Type | Description |
+|---|---|---|
 | `list` | string (required) | One of OFAC SDN, OFAC Consolidated, EU Consolidated, UK OFSI, UN Consolidated. |
-| `format` | `"csv" \| "json" \| "xlsx"` | Defaults to `csv`. XLSX is returned base64-encoded. |
+| `format` | string | `csv` (default), `json`, or `xlsx`. XLSX is returned base64-encoded. |
 
 ### `list_status`
 
-Report each official sanctions list's cached record count and last-refresh time, so you can confirm data freshness before relying on a result. Takes no input.
+No input. Returns each list's cached record count and last-refresh time.
 
-## FAQ
+## 6. Output
 
-**What is a denied-party or watchlist check?** Screening a name or company against government-published sanctions and denied-party lists before doing business with them, to avoid transacting with a sanctioned entity.
+One entry per screened subject in the `results` array from `screen_entity`:
 
-**Does this cover PEPs?** Not on this server; OpenSanctions' PEP collection is memory-heavy enough that it runs on the sibling Apify Actor instead, which allocates more memory for exactly that dataset.
+```json
+{
+    "subject": "Jane Doe",
+    "verdict": "REVIEW",
+    "recommendedAction": "Route to a compliance analyst for manual review before proceeding.",
+    "priorityScore": 78,
+    "matchCount": 1,
+    "highestConfidence": 91,
+    "narrative": "\"Jane Doe\" matched \"Jane A. Doe\" (91/100, strong-fuzzy) on OFAC SDN, EU Consolidated. This match requires analyst review before any decision is made.",
+    "matches": [
+        {
+            "matchedName": "Jane A. Doe",
+            "confidence": 91,
+            "matchType": "strong-fuzzy",
+            "sources": [
+                { "list": "OFAC SDN", "entityId": "OFAC SDN-12345", "program": "CUBA", "listVersion": "2026-01-01T00:00:00.000Z", "sourceUrl": "https://sanctionslistservice.ofac.treas.gov/..." },
+                { "list": "EU Consolidated", "entityId": "EU Consolidated-987", "program": "Cuba", "listVersion": "2026-01-01T00:00:00.000Z", "sourceUrl": "https://webgate.ec.europa.eu/..." }
+            ],
+            "riskIndicators": [{ "code": "CYBER", "label": "Cyber-related sanctions programme" }],
+            "falsePositiveAnalysis": { "mismatchSignals": [], "likelyFalsePositive": false, "reason": "No contradicting attributes found; name match alone should not be dismissed without analyst review." },
+            "autoCleared": false,
+            "ownershipRisk": { "flagged": false, "linkedEntities": [], "note": "No ownership/linkage signal found in the source list data for this entry. This is not a full 50%-rule check; beneficial-ownership tracing requires external corporate-registry data this tool does not have." }
+        }
+    ],
+    "whitelisted": false
+}
+```
+
+### Field definitions
+
+| Field | Meaning |
+|---|---|
+| `verdict` | `CLEAR`, `REVIEW`, or `ESCALATE`. |
+| `recommendedAction` | Plain-English next step and escalation routing. |
+| `priorityScore` | 0 to 100, weighted by confidence, ownership signal, and high-risk programme flags. |
+| `matchCount` | Number of consolidated (not raw per-list) matches above threshold, excluding auto-cleared. |
+| `highestConfidence` | Highest score among all matches, including auto-cleared ones. |
+| `narrative` | Reasoning in plain English, including for a clean result. |
+| `matches[].sources` | Every list this consolidated identity appears on. |
+| `matches[].riskIndicators` | Programme-category tags parsed from the matched list entries. |
+| `matches[].falsePositiveAnalysis` | Concrete attribute mismatches (DOB, country, identifier) versus the subject's own stated data. |
+| `matches[].autoCleared` | True when a low-confidence match is contradicted by two or more subject attributes. |
+| `matches[].ownershipRisk` | 50 percent rule linkage signal from the source list data, with an explicit non-overclaim note. |
+
+## 7. Use cases
+
+- **Onboarding screening**: check a new customer or counterparty before opening an account.
+- **KYC intake**: run an AML watchlist check as part of a standard know-your-customer flow.
+- **Payment screening**: check a payee before a wire, including a crypto wallet address if that is the payment rail.
+- **Vendor and supplier due diligence**: screen a supplier list before signing a contract.
+- **Denied party screening for export control**: check a buyer or intermediary against sanctions lists before shipping.
+- **Periodic re-screening**: call `monitor_changes` on a schedule to catch subjects who become newly listed after onboarding.
+- **Marketplace and platform trust and safety**: screen sellers or partners before activating an account.
+- **Agent-driven compliance workflows**: an AI agent handling intake or payment approval calls this tool directly as one step in a larger flow.
+- **Building your own compliance tooling**: use `export_list` to pull clean, structured list data into your own systems.
+
+## 8. How it works
+
+```
+subjects (names / crypto addresses)
+        |
+        v
+ parse & normalize
+        |
+        v
+ fetch + cache lists  ----  OFAC SDN/Consolidated, EU, UK OFSI, UN
+        |                   (streamed + parsed incrementally, cached in memory, refreshed daily)
+        v
+ fuzzy match  ----  deterministic, transliteration-aware, per list
+        |
+        v
+ cross-list consolidation  ----  same identity across lists becomes one match
+        |
+        v
+ risk flags + false-positive analysis + ownership signal
+        |
+        v
+ whitelist suppression
+        |
+        v
+ verdict + narrative (+ optional PDF certificate)
+```
+
+## 9. Performance and cost
+
+| Item | Typical |
+|---|---|
+| Screening | Sub-second per subject; lists are held in memory, not re-fetched per call. |
+| List refresh | Runs once daily in the background; a call never pays the cost of re-downloading government data. |
+| `screen_entity` | Priced per call. |
+| `monitor_changes` | Priced per call. |
+| `export_list` | Priced per call, regardless of list size or format. |
+| `list_status` | Lowest-cost call, for confirming data freshness. |
+| Memory | This server runs in a fixed container size; its list registry is deliberately kept to 5 sources to stay well inside that budget. |
+
+## 10. Limitations
+
+- **The OFAC 50 percent rule signal is a signal, not full ownership tracing.** It surfaces only what a source list's own data already states about linked entities. It does not compute beneficial-ownership percentages, and it does not trace ownership through corporate-registry data this tool does not have.
+- **No adverse-media data.** This checks structured government sources only. It does not search news, litigation, or adverse-media coverage.
+- **UK OFSI and EU date-of-birth mapping is partial.** UK OFSI date-of-birth and identifier fields are not currently mapped, and EU date-of-birth and identifier extraction is a best-effort addition layered on top of the verified name, programme and country fields; treat those two specific fields as lower confidence until validated against your own cases.
+- **Decisions need human review.** A REVIEW or ESCALATE verdict is a prioritised starting point for an analyst, not a final compliance decision, and a CLEAR result means no match was found above your chosen threshold across the lists screened as of the date shown, not a guarantee.
+- **This server screens five official government lists only.** It does not include OpenSanctions or any politically exposed persons collection; that additional coverage runs on a separate deployment sized for its larger memory footprint.
+- **Transliteration covers Cyrillic and Greek only.** Arabic, Hebrew and CJK-script names are matched only against whatever Latin rendering the source list already provides.
+
+## 11. Responsible use
+
+This tool is built for legitimate AML, KYC and denied party screening and compliance workflows. It reads only public, official sources and stores nothing beyond the in-memory list cache used to keep screening fast. It is not a substitute for a qualified compliance programme, and it is not legal advice. A screening result here should be reviewed by a person before any account, payment, or business decision is made on it, particularly for REVIEW and ESCALATE verdicts.
+
+## 12. FAQ
+
+**What is a denied party or watchlist check?** Screening a name or company against government-published sanctions and denied party lists before doing business with them, so you avoid transacting with a sanctioned entity.
+
+**What is the OFAC SDN list?** The US Treasury's Specially Designated Nationals list: individuals and companies US persons are generally prohibited from dealing with.
+
+**What is the difference between OFAC SDN and OFAC Consolidated?** SDN is the primary blocked-persons list. Consolidated covers additional non-SDN sanctions programmes such as sectoral sanctions and other restricted-party lists.
+
+**What is the UK OFSI list?** The UK Office of Financial Sanctions Implementation's Consolidated List of financial sanctions targets, the UK equivalent of the OFAC SDN list.
+
+**Is this an AML screening tool or a KYC tool?** Both. The same check supports AML watchlist screening at onboarding or before a transaction and ongoing KYC due diligence via `monitor_changes`.
 
 **Why does the same name sometimes return one match instead of several?** The same real-world person or company is often listed independently by more than one source. This tool consolidates those into one match with every source listed, instead of one row per list.
 
-**What does `autoCleared` mean?** A match scored below strong-confidence and contradicted by two or more of the subject's own stated attributes (date of birth, country, or identifier). It is still returned, just flagged so it can be deprioritized.
+**What does autoCleared mean?** A match scored below strong-confidence and contradicted by two or more of the subject's own stated attributes (date of birth, country, or identifier). It is still returned, just flagged so it can be deprioritized.
 
 **Is a CLEAR result guaranteed accurate?** No. It means no match was found above your chosen threshold, across the lists screened, as of the check date. It is not legal advice.
 
-## Trust & compliance
+**Can I re-check the same subjects without re-reading everything?** Yes, call `monitor_changes` with `previousResults` set to a prior `screen_entity` call's `results` array; you get back only what changed.
 
-Screens against official government sources only. Nothing is stored beyond the in-memory list cache used to keep screening fast; screened subjects are never logged or retained. This is a screening aid, not legal advice: the compliance decision is yours.
+**Does this screen crypto wallet addresses?** Yes. A subject value shaped like a BTC, ETH or similar address is checked against OFAC's published digital currency address list instead of fuzzy name matching.
+
+**Does this store any of my data?** No. Screening reads only the official public sources listed above; nothing beyond the in-memory list cache is retained.
+
+## 13. Related products
+
+| Product | What it does |
+|---|---|
+| [IBAN Validator](https://mcpize.com/mcp/iban-validator-mcp) | Offline ISO 13616 IBAN checksum and structure validation. |
+| [Email & Domain Auth Checker](https://mcpize.com/mcp/email-domain-checker-mcp) | MX, SPF, DKIM and DMARC checks from DNS alone. |
+| [PDF Toolkit](https://mcpize.com/mcp/pdf-toolkit-mcp) | Merge, split, compress, convert, rotate and watermark PDFs. |
 
 ## Local development
 
@@ -103,14 +289,8 @@ mcpize deploy
 mcpize publish --show
 ```
 
-## Related products
-
-- **[IBAN Validator](https://mcpize.com/mcp/iban-validator-mcp)**, offline ISO 13616 IBAN checksum and structure validation.
-- **[Email & Domain Auth Checker](https://mcpize.com/mcp/email-domain-checker-mcp)**, MX, SPF, DKIM and DMARC checks from DNS alone.
-- **[PDF Toolkit](https://mcpize.com/mcp/pdf-toolkit-mcp)**, merge, split, compress, convert, rotate and watermark PDFs.
-
 ## License
 
 MIT
 
-— A Howth Technology Factory tool. Official sources, nothing stored.
+Built by Howth Technology Factory. Precisely engineered tools for teams and AI agents, made in Dublin. Full catalogue: howthtechnologyfactory.pro
