@@ -5,6 +5,7 @@ import { z } from "zod";
 import chalk from "chalk";
 import { screenEntity, monitorChanges, exportList, listStatus } from "./tools.js";
 import { initialLoad, startBackgroundRefresh } from "./cache.js";
+import { APIFY_ACTOR_URL, MAX_MONITOR_SUBJECTS, MAX_SCREEN_SUBJECTS, cappedSubjectsSchema } from "./limits.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -162,7 +163,7 @@ function createMcpServer(): McpServer {
       description:
         "Screen one or more names, companies or crypto addresses (AML/KYC/PEP watchlist check) against the official OFAC SDN, OFAC Consolidated, EU, UK OFSI and UN sanctions lists. Cross-list matches are consolidated into one result per identity, with risk-programme flags, false-positive analysis and an OFAC 50%-rule ownership signal. Example: { \"subjects\": [\"AeroCaribbean Airlines\"], \"threshold\": 85 }.",
       inputSchema: {
-        subjects: z.array(subjectSchema).min(1).describe('Plain names, or objects for richer matching, e.g. ["AeroCaribbean Airlines"] or [{"name": "...", "country": "Cuba"}].'),
+        subjects: cappedSubjectsSchema(subjectSchema, MAX_SCREEN_SUBJECTS).describe(`Plain names, or objects for richer matching, e.g. ["AeroCaribbean Airlines"] or [{"name": "...", "country": "Cuba"}]. Maximum ${MAX_SCREEN_SUBJECTS} per call; for longer lists use the Apify actor at ${APIFY_ACTOR_URL}.`),
         ...screenOptionsSchema,
         generateCertificate: z.boolean().optional().describe("Render a PDF Sanctions Screening Certificate (base64) covering every subject in this call."),
       },
@@ -189,7 +190,7 @@ function createMcpServer(): McpServer {
       description:
         "Re-screens subjects against the freshly-cached lists and reports only what changed versus a prior result set you supply back (previousResults - your own copy of an earlier screen_entity/monitor_changes \"results\" array). Use this to detect new hits, newly-cleared subjects, or list updates without re-reading every unchanged subject.",
       inputSchema: {
-        subjects: z.array(subjectSchema).min(1),
+        subjects: cappedSubjectsSchema(subjectSchema, MAX_MONITOR_SUBJECTS).describe(`Subjects to re-screen. Maximum ${MAX_MONITOR_SUBJECTS} per call; for longer watchlists use the Apify actor at ${APIFY_ACTOR_URL}.`),
         previousResults: z.array(z.unknown()).describe("The \"results\" array from a prior screen_entity or monitor_changes call, for the same subjects."),
         ...screenOptionsSchema,
       },
