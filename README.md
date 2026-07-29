@@ -25,7 +25,23 @@ Sanctions Screening is built to close that gap: official government sources, cro
 - **Change monitoring**: re-screen the same subjects and get back only what changed since your last check.
 - **PDF audit certificates**: an optional screening certificate documenting subject, lists, versions, method, threshold and verdict.
 
-## 3. Built for AI agents, callable by humans too
+## 3. Who it's for
+
+**For compliance and risk teams.** Screen a new counterparty at onboarding and get a documented CLEAR / REVIEW / ESCALATE verdict with false-positive analysis, instead of four separate list lookups reconciled by hand.
+
+**For finance and accounts payable.** Check a payee before releasing a wire, including the crypto wallet address when that is the payment rail, so a blocked party is caught before funds move.
+
+**For operations and procurement.** Screen a supplier list before a contract round, then use `monitor_changes` on a schedule so a supplier who becomes listed after onboarding surfaces on the next check.
+
+**For developers and AI agents.** Call `screen_entity` inside a KYC intake or payment-release flow, branch on `verdict`, and escalate only REVIEW and ESCALATE to a human.
+
+### When to use it, and when not to
+
+**Use it** for AML/KYC screening, denied-party and export-control checks, payment and payee screening, periodic re-screening, and pulling clean structured list data into your own systems.
+
+**Do not use it** as your compliance programme. It is a screening input, not a determination: it does not decide whether to onboard, block or file a report, it does not replace analyst judgement, and it is not legal advice. **This server screens five official government lists only** — it does not include OpenSanctions or any politically exposed persons collection; that coverage runs on a separate deployment sized for its larger memory footprint. It also does not do adverse-media screening or full beneficial-ownership tracing.
+
+## 4. Built for AI agents, callable by humans too
 
 This is an MCP server: an AI agent (Claude, Cursor, or any MCP-compatible client) can call its tools directly as one step inside a larger workflow, such as KYC intake, vendor onboarding, or payment release, without a human copying names between systems. A person can call the same tools through any MCP client, or directly over HTTP JSON-RPC for testing.
 
@@ -50,7 +66,7 @@ Result (one item in "results"):
 }
 ```
 
-## 4. How to use Sanctions Screening
+## 5. How to use Sanctions Screening
 
 **From an AI agent**: connect any MCP-compatible client to this server's endpoint and call `screen_entity`, `monitor_changes`, `export_list` or `list_status` directly.
 
@@ -95,7 +111,7 @@ curl -X POST "https://your-deployment-url/mcp" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"screen_entity","arguments":{"subjects":["AeroCaribbean Airlines","Acme Test Company"],"threshold":85}}}'
 ```
 
-## 5. Input parameters
+## 6. Input parameters
 
 ### `screen_entity`
 
@@ -128,7 +144,7 @@ curl -X POST "https://your-deployment-url/mcp" \
 
 No input. Returns each list's cached record count and last-refresh time.
 
-## 6. Output
+## 7. Output
 
 One entry per screened subject in the `results` array from `screen_entity`:
 
@@ -176,7 +192,7 @@ One entry per screened subject in the `results` array from `screen_entity`:
 | `matches[].autoCleared` | True when a low-confidence match is contradicted by two or more subject attributes. |
 | `matches[].ownershipRisk` | 50 percent rule linkage signal from the source list data, with an explicit non-overclaim note. |
 
-## 7. Use cases
+## 8. Use cases
 
 - **Onboarding screening**: check a new customer or counterparty before opening an account.
 - **KYC intake**: run an AML watchlist check as part of a standard know-your-customer flow.
@@ -188,7 +204,7 @@ One entry per screened subject in the `results` array from `screen_entity`:
 - **Agent-driven compliance workflows**: an AI agent handling intake or payment approval calls this tool directly as one step in a larger flow.
 - **Building your own compliance tooling**: use `export_list` to pull clean, structured list data into your own systems.
 
-## 8. How it works
+## 9. How it works
 
 ```
 subjects (names / crypto addresses)
@@ -215,7 +231,7 @@ subjects (names / crypto addresses)
  verdict + narrative (+ optional PDF certificate)
 ```
 
-## 9. Performance and cost
+## 10. Performance and cost
 
 | Item | Typical |
 |---|---|
@@ -227,7 +243,7 @@ subjects (names / crypto addresses)
 | `list_status` | Lowest-cost call, for confirming data freshness. |
 | Memory | This server runs in a fixed container size; its list registry is deliberately kept to 5 sources to stay well inside that budget. |
 
-## 10. Limitations
+## 11. Limitations
 
 - **The OFAC 50 percent rule signal is a signal, not full ownership tracing.** It surfaces only what a source list's own data already states about linked entities. It does not compute beneficial-ownership percentages, and it does not trace ownership through corporate-registry data this tool does not have.
 - **No adverse-media data.** This checks structured government sources only. It does not search news, litigation, or adverse-media coverage.
@@ -236,11 +252,11 @@ subjects (names / crypto addresses)
 - **This server screens five official government lists only.** It does not include OpenSanctions or any politically exposed persons collection; that additional coverage runs on a separate deployment sized for its larger memory footprint.
 - **Transliteration covers Cyrillic and Greek only.** Arabic, Hebrew and CJK-script names are matched only against whatever Latin rendering the source list already provides.
 
-## 11. Responsible use
+## 12. Responsible use
 
 This tool is built for legitimate AML, KYC and denied party screening and compliance workflows. It reads only public, official sources and stores nothing beyond the in-memory list cache used to keep screening fast. It is not a substitute for a qualified compliance programme, and it is not legal advice. A screening result here should be reviewed by a person before any account, payment, or business decision is made on it, particularly for REVIEW and ESCALATE verdicts.
 
-## 12. FAQ
+## 13. FAQ
 
 **What is a denied party or watchlist check?** Screening a name or company against government-published sanctions and denied party lists before doing business with them, so you avoid transacting with a sanctioned entity.
 
@@ -264,7 +280,7 @@ This tool is built for legitimate AML, KYC and denied party screening and compli
 
 **Does this store any of my data?** No. Screening reads only the official public sources listed above; nothing beyond the in-memory list cache is retained.
 
-## 13. Related products
+## 14. Related products
 
 | Product | What it does |
 |---|---|
