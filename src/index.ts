@@ -168,7 +168,7 @@ function createMcpServer(): McpServer {
     {
       title: "Screen Entity",
       description:
-        "Screen one or more names, companies or crypto addresses (AML/KYC/PEP watchlist check) against the official OFAC SDN, OFAC Consolidated, EU, UK OFSI and UN sanctions lists. Cross-list matches are consolidated into one result per identity, with risk-programme flags, false-positive analysis and an OFAC 50%-rule ownership signal. Example: { \"subjects\": [\"AeroCaribbean Airlines\"], \"threshold\": 85 }.",
+        "Screen one or more names, companies or crypto addresses (AML/KYC/PEP watchlist check) against the official OFAC SDN, OFAC Consolidated, EU, UK OFSI and UN sanctions lists. Cross-list matches are consolidated into one result per identity, with risk-programme flags, false-positive analysis and an OFAC 50%-rule ownership signal. Not for re-checking subjects you have screened before: use monitor_changes, which reports only what changed. Example: { \"subjects\": [\"AeroCaribbean Airlines\"], \"threshold\": 85 }.",
       inputSchema: {
         subjects: cappedSubjectsSchema(subjectSchema, MAX_SCREEN_SUBJECTS).describe(`Plain names, or objects for richer matching, e.g. ["AeroCaribbean Airlines"] or [{"name": "...", "country": "Cuba"}]. Maximum ${MAX_SCREEN_SUBJECTS} per call; for longer lists use the Apify actor at ${APIFY_ACTOR_URL}.`),
         ...screenOptionsSchema,
