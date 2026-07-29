@@ -14,6 +14,19 @@ export const MAX_MONITOR_SUBJECTS = 50;
 
 export const APIFY_ACTOR_URL = "https://apify.com/apifmcpfactory/sanctions-screening";
 
+// previousResults is caller-supplied data compared against, not screening work, so
+// it is not a pricing hole — but it is an unbounded allocation on a 350MB heap, and
+// a monitor call can never meaningfully carry more prior results than it has
+// subjects. Capped at the same limit for that reason.
+export const MAX_PREVIOUS_RESULTS = MAX_MONITOR_SUBJECTS;
+
+export function tooManyPreviousResults(limit: number): string {
+    return (
+        `Too many previousResults: pass at most ${limit}, matching this tool's subject ` +
+        `limit. Send back only the "results" entries for the subjects in this call.`
+    );
+}
+
 export function tooManySubjects(limit: number): string {
     return (
         `Too many subjects: this tool screens up to ${limit} per call. Split the list into ` +
@@ -30,4 +43,9 @@ export function tooManySubjects(limit: number): string {
  */
 export function cappedSubjectsSchema<T extends z.ZodTypeAny>(itemSchema: T, limit: number) {
     return z.array(itemSchema).min(1).max(limit, tooManySubjects(limit));
+}
+
+/** The prior-result set monitor_changes diffs against, bounded to the same limit. */
+export function cappedPreviousResultsSchema(limit: number) {
+    return z.array(z.unknown()).max(limit, tooManyPreviousResults(limit));
 }

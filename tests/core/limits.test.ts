@@ -3,8 +3,11 @@ import { z } from "zod";
 import {
     APIFY_ACTOR_URL,
     MAX_MONITOR_SUBJECTS,
+    MAX_PREVIOUS_RESULTS,
     MAX_SCREEN_SUBJECTS,
+    cappedPreviousResultsSchema,
     cappedSubjectsSchema,
+    tooManyPreviousResults,
     tooManySubjects,
 } from "../../src/limits.js";
 
@@ -60,6 +63,29 @@ describe("per-call batch caps", () => {
 
         it("allows batches that screen_entity would reject", () => {
             expect(schema.safeParse(subjects(MAX_SCREEN_SUBJECTS + 1)).success).toBe(true);
+        });
+    });
+
+    describe("monitor_changes previousResults (cap 50)", () => {
+        const schema = cappedPreviousResultsSchema(MAX_PREVIOUS_RESULTS);
+
+        it("tracks the monitor subject limit", () => {
+            expect(MAX_PREVIOUS_RESULTS).toBe(MAX_MONITOR_SUBJECTS);
+        });
+
+        it("accepts an empty prior set (first run has no baseline)", () => {
+            expect(schema.safeParse([]).success).toBe(true);
+        });
+
+        it("accepts exactly the cap", () => {
+            expect(schema.safeParse(subjects(MAX_PREVIOUS_RESULTS)).success).toBe(true);
+        });
+
+        it("rejects one over the cap", () => {
+            const result = schema.safeParse(subjects(MAX_PREVIOUS_RESULTS + 1));
+            expect(result.success).toBe(false);
+            const message = result.success ? "" : result.error.issues[0].message;
+            expect(message).toContain("at most 50");
         });
     });
 

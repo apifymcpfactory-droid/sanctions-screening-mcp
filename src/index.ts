@@ -5,7 +5,14 @@ import { z } from "zod";
 import chalk from "chalk";
 import { screenEntity, monitorChanges, exportList, listStatus } from "./tools.js";
 import { initialLoad, startBackgroundRefresh } from "./cache.js";
-import { APIFY_ACTOR_URL, MAX_MONITOR_SUBJECTS, MAX_SCREEN_SUBJECTS, cappedSubjectsSchema } from "./limits.js";
+import {
+  APIFY_ACTOR_URL,
+  MAX_MONITOR_SUBJECTS,
+  MAX_PREVIOUS_RESULTS,
+  MAX_SCREEN_SUBJECTS,
+  cappedPreviousResultsSchema,
+  cappedSubjectsSchema,
+} from "./limits.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -191,7 +198,7 @@ function createMcpServer(): McpServer {
         "Re-screens subjects against the freshly-cached lists and reports only what changed versus a prior result set you supply back (previousResults - your own copy of an earlier screen_entity/monitor_changes \"results\" array). Use this to detect new hits, newly-cleared subjects, or list updates without re-reading every unchanged subject.",
       inputSchema: {
         subjects: cappedSubjectsSchema(subjectSchema, MAX_MONITOR_SUBJECTS).describe(`Subjects to re-screen. Maximum ${MAX_MONITOR_SUBJECTS} per call; for longer watchlists use the Apify actor at ${APIFY_ACTOR_URL}.`),
-        previousResults: z.array(z.unknown()).describe("The \"results\" array from a prior screen_entity or monitor_changes call, for the same subjects."),
+        previousResults: cappedPreviousResultsSchema(MAX_PREVIOUS_RESULTS).describe(`The "results" array from a prior screen_entity or monitor_changes call, for the same subjects. Maximum ${MAX_PREVIOUS_RESULTS}.`),
         ...screenOptionsSchema,
       },
       outputSchema: {
